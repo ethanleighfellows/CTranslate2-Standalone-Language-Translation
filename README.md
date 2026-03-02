@@ -12,7 +12,6 @@ Following the repository guidelines, the project is structured as:
 src/
   main.py            # Primary standalone CLI application
 tests/               # Unit testing and dummy benchmark files
-docs/                # Extra documentation, including AGENTS.md
 translation_models/  # HuggingFace MarianMT model cache (auto-downloaded)
 ```
 
