@@ -100,8 +100,8 @@ def convert_model(source_lang: str, target_lang: str, quantization: str = "int8"
 
 _model_cache = {}
 
-def get_translator(source_lang: str, target_lang: str):
-    cache_key = f"{source_lang}-{target_lang}"
+def get_translator(source_lang: str, target_lang: str, device: str = "cpu"):
+    cache_key = f"{source_lang}-{target_lang}-{device}"
     if cache_key in _model_cache:
         return _model_cache[cache_key]
 
@@ -118,8 +118,8 @@ def get_translator(source_lang: str, target_lang: str):
     model_path = str(_model_dir(source_lang, target_lang))
     model_name = get_stored_model_name(source_lang, target_lang) or f"Helsinki-NLP/opus-mt-{source_lang}-{target_lang}"
 
-    logger.info(f"Loading CTranslate2 model: {model_name}")
-    translator = ctranslate2.Translator(model_path, device="cpu", inter_threads=4)
+    logger.info(f"Loading CTranslate2 model: {model_name} on {device}")
+    translator = ctranslate2.Translator(model_path, device=device, inter_threads=4)
 
     try:
         tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -130,7 +130,7 @@ def get_translator(source_lang: str, target_lang: str):
     _model_cache[cache_key] = (translator, tokenizer)
     return translator, tokenizer
 
-def translate(texts: list[str] | str, target_lang: str, source_lang: str = "en") -> list[str] | str:
+def translate(texts: list[str] | str, target_lang: str, source_lang: str = "en", device: str = "cpu") -> list[str] | str:
     """Translate text(s) from source_lang to target_lang."""
     is_single = isinstance(texts, str)
     
@@ -145,7 +145,7 @@ def translate(texts: list[str] | str, target_lang: str, source_lang: str = "en")
         return [""] * len(text_list) if not is_single else ""
 
     texts_to_translate: list[str] = [text_list[i] for i in non_empty_indices]
-    translator, tokenizer = get_translator(source_lang, target_lang)
+    translator, tokenizer = get_translator(source_lang, target_lang, device=device)
 
     # Ensure tokenization explicitly treats it as a single source sequence per input
     tokenized = []
@@ -181,7 +181,7 @@ def translate(texts: list[str] | str, target_lang: str, source_lang: str = "en")
         return translated[0]
     return translated
 
-def translate_csv(input_path: str, output_path: str, column: str, target_lang: str, source_lang: str = "en", batch_size: int = 32):
+def translate_csv(input_path: str, output_path: str, column: str, target_lang: str, source_lang: str = "en", batch_size: int = 32, device: str = "cpu"):
     """Translate a specific column in a CSV file and write to a new file."""
     try:
         from tqdm import tqdm # type: ignore
@@ -229,7 +229,7 @@ def translate_csv(input_path: str, output_path: str, column: str, target_lang: s
         # Translate the batch
         try:
             logger.info(f"Translating batch of {len(texts_to_translate)} items starting at index {i}...")
-            translations = translate(texts_to_translate, target_lang=target_lang, source_lang=source_lang)
+            translations = translate(texts_to_translate, target_lang=target_lang, source_lang=source_lang, device=device)
             logger.info(f"Batch {i} translation complete.")
             
             # Ensure it's a list even if batch_size was 1
@@ -261,6 +261,7 @@ def main():
     text_parser.add_argument("text", help="Text to translate")
     text_parser.add_argument("--target", required=True, choices=["fr", "it", "pt"], help="Target language (fr, it, pt)")
     text_parser.add_argument("--source", default="en", help="Source language (default: en)")
+    text_parser.add_argument("--device", default="cpu", choices=["cpu", "cuda", "auto"], help="Computation device (cpu, cuda, auto)")
 
     # Subcommand: csv
     csv_parser = subparsers.add_parser("csv", help="Translate a column in a CSV file")
@@ -270,11 +271,12 @@ def main():
     csv_parser.add_argument("--target", required=True, choices=["fr", "it", "pt"], help="Target language (fr, it, pt)")
     csv_parser.add_argument("--source", default="en", help="Source language (default: en)")
     csv_parser.add_argument("--batch-size", type=int, default=32, help="Batch size for translation (default: 32)")
+    csv_parser.add_argument("--device", default="cpu", choices=["cpu", "cuda", "auto"], help="Computation device (cpu, cuda, auto)")
 
     args = parser.parse_args()
     
     if args.command == "text":
-        result = translate(args.text, target_lang=args.target, source_lang=args.source)
+        result = translate(args.text, target_lang=args.target, source_lang=args.source, device=args.device)
         print("\n--- Translation Result ---")
         print(f"Source ({args.source}): {args.text}")
         print(f"Target ({args.target}): {result}")
@@ -286,7 +288,8 @@ def main():
             column=args.column,
             target_lang=args.target,
             source_lang=args.source,
-            batch_size=args.batch_size
+            batch_size=args.batch_size,
+            device=args.device
         )
 
 if __name__ == "__main__":

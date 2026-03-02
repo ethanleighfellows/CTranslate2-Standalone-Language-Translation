@@ -5,3 +5,4 @@ translation_models/
 .env
 .DS_Store
 tests/*.csv
+docs/AGENTS.md
