@@ -2,7 +2,6 @@
 
 This repository contains a standalone, barebones Python script to translate large datasets or individual strings from English to French (`fr`), Italian (`it`), and Portuguese (`pt`) using **[CTranslate2](https://github.com/OpenNMT/CTranslate2)** and **[HuggingFace Transformers](https://huggingface.co/docs/transformers/index)**.
 
-It was originally extracted to remove unnecessary framework dependencies and tightly coupled configurations.
 
 ## Project Structure
 
