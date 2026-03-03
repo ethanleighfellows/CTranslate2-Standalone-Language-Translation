@@ -33,6 +33,24 @@ The script supports executing models on hardware accelerators through the `--dev
 
 *Note: Passing `--device cuda` on a Mac or a system without compatible NVIDIA hardware will crash the script. Stick to `cpu` or `auto` in those environments.*
 
+### Windows CUDA Setup
+
+If you are running on Windows and encounter errors regarding missing CUDA libraries (e.g., `cublas64_12.dll`) when using `--device cuda`, install the Python-specific NVIDIA libraries:
+
+```bash
+pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
+```
+
+The application is configured to automatically discover and load these installed libraries at runtime on Windows.
+
+### Missing PyTorch Error
+
+During the first run for a new language pair, the script converts the HuggingFace model to CTranslate2 format. This initialization step requires PyTorch. Since CTranslate2 handles the GPU inference efficiently, you can satisfy this requirement by installing the lightweight CPU-only version of PyTorch:
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+```
+
 ## Requirements & Installation
 
 It is recommended to use a standard Python virtual environment.
