@@ -4,6 +4,21 @@ import json
 import logging
 import os
 import shutil
+import site
+
+# On Windows, try to auto-discover nvidia-cublas-cu12 and nvidia-cudnn-cu12 DLLs
+if os.name == 'nt' and hasattr(os, 'add_dll_directory'):
+    try:
+        paths = site.getsitepackages() + [site.getusersitepackages()]
+        for p in paths:
+            cublas_bin = os.path.join(p, 'nvidia', 'cublas', 'bin')
+            if os.path.exists(cublas_bin):
+                os.add_dll_directory(cublas_bin)
+            cudnn_bin = os.path.join(p, 'nvidia', 'cudnn', 'bin')
+            if os.path.exists(cudnn_bin):
+                os.add_dll_directory(cudnn_bin)
+    except Exception:
+        pass
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -113,7 +128,7 @@ def get_translator(source_lang: str, target_lang: str, device: str = "cpu"):
         import ctranslate2 # type: ignore
         from transformers import AutoTokenizer # type: ignore
     except ImportError:
-        pass
+        raise ImportError("Please install dependencies: pip install ctranslate2 transformers")
 
     model_path = str(_model_dir(source_lang, target_lang))
     model_name = get_stored_model_name(source_lang, target_lang) or f"Helsinki-NLP/opus-mt-{source_lang}-{target_lang}"
