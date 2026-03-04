@@ -5,6 +5,7 @@ import logging
 import os
 import shutil
 import site
+import re
 
 # On Windows, try to auto-discover nvidia-cublas-cu12 and nvidia-cudnn-cu12 DLLs
 if os.name == 'nt' and hasattr(os, 'add_dll_directory'):
@@ -13,10 +14,10 @@ if os.name == 'nt' and hasattr(os, 'add_dll_directory'):
         for p in paths:
             cublas_bin = os.path.join(p, 'nvidia', 'cublas', 'bin')
             if os.path.exists(cublas_bin):
-                os.add_dll_directory(cublas_bin)
+                os.add_dll_directory(cublas_bin) # type: ignore
             cudnn_bin = os.path.join(p, 'nvidia', 'cudnn', 'bin')
             if os.path.exists(cudnn_bin):
-                os.add_dll_directory(cudnn_bin)
+                os.add_dll_directory(cudnn_bin) # type: ignore
     except Exception:
         pass
 import tempfile
@@ -145,6 +146,45 @@ def get_translator(source_lang: str, target_lang: str, device: str = "cpu"):
     _model_cache[cache_key] = (translator, tokenizer)
     return translator, tokenizer
 
+def extract_codespans(text: str) -> tuple[str, dict[int, str]]:
+    spans = {}
+    counter = [0]
+
+    def replacer(match):
+        span_text = match.group(0)
+        c = counter[0]
+        placeholder = f"[XXX_{c}_XXX]"
+        spans[c] = span_text
+        counter[0] += 1
+        return placeholder
+
+    # First extract block-level code to avoid matching single backticks inside them
+    # re.DOTALL is important for blocks spanning multiple lines
+    text = re.sub(r'```.*?```', replacer, text, flags=re.DOTALL)
+    
+    # Then extract inline code
+    text = re.sub(r'`[^`]+`', replacer, text)
+    
+    return text, spans
+
+def restore_codespans(text: str, spans: dict[int, str]) -> str:
+    if not spans:
+        return text
+    
+    # We use a permissive regex because translation models might insert spaces
+    # inside our placeholders: [ XXX _ 0 _ XXX ]
+    def replacer(match):
+        idx_str = match.group(1)
+        try:
+            idx = int(idx_str)
+            if idx in spans:
+                return spans[idx]
+        except ValueError:
+            pass
+        return match.group(0) # Return original matched string if not found
+
+    return re.sub(r'\[\s*XXX\s*_\s*(\d+)\s*_\s*XXX\s*\]', replacer, text)
+
 def translate(texts: list[str] | str, target_lang: str, source_lang: str = "en", device: str = "cpu") -> list[str] | str:
     """Translate text(s) from source_lang to target_lang."""
     is_single = isinstance(texts, str)
@@ -160,11 +200,19 @@ def translate(texts: list[str] | str, target_lang: str, source_lang: str = "en",
         return [""] * len(text_list) if not is_single else ""
 
     texts_to_translate: list[str] = [text_list[i] for i in non_empty_indices]
+    
+    extracted_texts = []
+    spans_list = []
+    for text in texts_to_translate:
+        ext_text, spans = extract_codespans(text)
+        extracted_texts.append(ext_text)
+        spans_list.append(spans)
+        
     translator, tokenizer = get_translator(source_lang, target_lang, device=device)
 
     # Ensure tokenization explicitly treats it as a single source sequence per input
     tokenized = []
-    for t in texts_to_translate:
+    for t in extracted_texts:
         # Some models require source language prefix, typically only multilingual ones
         # For standard MarianMT, this usually isn't necessary, but passing direct lists is safer
         tokens = tokenizer.convert_ids_to_tokens(tokenizer.encode(t, truncation=True, max_length=512))
@@ -185,6 +233,7 @@ def translate(texts: list[str] | str, target_lang: str, source_lang: str = "en",
     for result in results:
         tokens = result.hypotheses[0]
         text = tokenizer.decode(tokenizer.convert_tokens_to_ids(tokens))
+        text = restore_codespans(text, spans_list[len(translated_non_empty)])
         translated_non_empty.append(text)
 
     # Reconstruct original list order with empty strings substituted back
